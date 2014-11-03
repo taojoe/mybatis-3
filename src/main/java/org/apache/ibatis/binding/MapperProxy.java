@@ -19,6 +19,8 @@ import java.io.Serializable;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.lang.reflect.*;
+import java.lang.invoke.MethodHandles;
 
 import org.apache.ibatis.reflection.ExceptionUtil;
 import org.apache.ibatis.session.SqlSession;
@@ -49,6 +51,27 @@ public class MapperProxy<T> implements InvocationHandler, Serializable {
         throw ExceptionUtil.unwrapThrowable(t);
       }
     }
+    if (method.isDefault()) {
+	final Class<?> declaringClass = method.getDeclaringClass();
+            final MethodHandles.Lookup lookup = MethodHandles.publicLookup()
+                    .in(declaringClass);
+
+            // ensure allowed mode will not check visibility
+            final Field f = MethodHandles.Lookup.class.getDeclaredField("allowedModes");
+            final int modifiers = f.getModifiers();
+            if (Modifier.isFinal(modifiers)) { // should be done a single time
+                final Field modifiersField = Field.class.getDeclaredField("modifiers");
+                modifiersField.setAccessible(true);
+                modifiersField.setInt(f, modifiers & ~Modifier.FINAL);
+                f.setAccessible(true);
+                f.set(lookup, MethodHandles.Lookup.PRIVATE);
+            }
+
+            return lookup
+                    .unreflectSpecial(method, declaringClass)
+                    .bindTo(proxy)
+                    .invokeWithArguments(args);
+    }    
     final MapperMethod mapperMethod = cachedMapperMethod(method);
     return mapperMethod.execute(sqlSession, args);
   }
